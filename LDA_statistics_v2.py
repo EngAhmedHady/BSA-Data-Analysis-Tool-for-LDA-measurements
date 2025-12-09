@@ -100,9 +100,20 @@ def compute_gmm_responsibilities(data_col, GMM_guess):
     - updated_weights: array of updated mixing weights (length K)
     """
     X = data_col.values if isinstance(data_col, pd.Series) else data_col
+    
+    try:
+        X = np.asarray(X, dtype=np.float64) 
+    except ValueError:
+        print(X)
+        raise TypeError("Input data could not be converted to a numerical type (float64). Check for non-numeric entries.")
+    
     if np.isnan(X).any() or np.isinf(X).any():
         raise ValueError("X contains NaN or Inf values.")
     means, stds, weights = GMM_guess
+    means = np.array(means)
+    stds = np.array(stds)
+    weights = np.array(weights)
+    
     N = len(X)
     K = len(means)
     
@@ -164,6 +175,8 @@ def calculate_component_statistics(df, at_col, tt_col, lda_col, GMMx_weights=Non
     t_lda_sum = (df[tt_col] * df[lda_col]).sum()
     if GMMx_weights:
         vel, stds, _ = GMMx_weights
+        vel = np.array(vel)
+        stds = np.array(stds)
         gamma, w = compute_gmm_responsibilities(df['LDA1 [m/s]'].dropna(), GMMx_weights)
         # print(w)
         avg_vel = np.sum(w * vel)
@@ -264,14 +277,18 @@ def analyze_lda_data(directory_path, main_file_name, file_suffixes, num_componen
         # --- Calculate statistics for component 1 (U-component) ---
         (counts1, at_min_1, at_max_1, d_rate_1, tt_sum_1, u_avg, u_rms, mean_conf_u, rms_conf_u) = \
         calculate_component_statistics(Df, "AT [ms]", "TT [µs]", "LDA1 [m/s]")
-        
+
         # Accumulate total active time duration
         if at_max_1 is not np.nan and at_min_1 is not np.nan and (at_max_1 - at_min_1) > 0:
             total_at_duration_1 += (at_max_1 - at_min_1) / 1000
-            
+        
+        max_com1 = Df['LDA1 [m/s]'].dropna().max()
+        min_com1 = Df['LDA1 [m/s]'].dropna().min()
+        if not np.isnan(max_com1) and not np.isnan(min_com1):
+            ax[0].set_xlim([min_com1-0.05*min_com1,  max_com1+0.05*max_com1])
         ax[0].hist(Df['LDA1 [m/s]'].dropna(), density=True, bins=25, edgecolor='black', alpha=0.5,
                    label=f'Run {n}, counts {counts1}')
-        ax[0].set_xlabel('$U$ [m/s]')
+        ax[0].set_xlabel('$u$ [m/s]')
         ax[0].set_ylabel('Probability Density')
         ax[0].legend()
         
@@ -293,9 +310,13 @@ def analyze_lda_data(directory_path, main_file_name, file_suffixes, num_componen
                 total_at_duration_2 += (at_max_2 - at_min_2) / 1000
 
             # Plot histograms for component 2
+            max_com2 = Df['LDA2{2} [m/s]'].dropna().max()
+            min_com2 = Df['LDA2{2} [m/s]'].dropna().min()
+            if not np.isnan(max_com2) and not np.isnan(min_com2):
+                ax[1].set_xlim([min_com2-0.05*min_com2,  max_com2+0.05*max_com2])
             ax[1].hist(Df['LDA2{2} [m/s]'].dropna(), density=True, bins=25, edgecolor='black', alpha=0.5,
                        label=f'Run {n}, counts {counts2}')
-            ax[1].set_xlabel('$V$ [m/s]')
+            ax[1].set_xlabel('$v$ [m/s]')
             ax[1].set_ylabel('Probability Density')
             ax[1].legend()
             
@@ -340,23 +361,33 @@ def analyze_lda_data(directory_path, main_file_name, file_suffixes, num_componen
         # Calculate global statistics for component 2
         (counts2_global, _, _, _, tt2_sum_global, v_avg_global, v_rms_global, mean_conf_v_global, rms_conf_v_global) = \
         calculate_component_statistics(concatenated_df, "AT{2} [ms]", "TT{2} [µs]", "LDA2{2} [m/s]", GMMy_weights)
-        
+    
+    max_com1 = concatenated_df['LDA1 [m/s]'].dropna().max()
+    min_com1 = concatenated_df['LDA1 [m/s]'].dropna().min()
     # Plot KDE for overall data
-    if num_components == 1:
-        concatenated_df['LDA1 [m/s]'].plot.kde(ax=ax[0], lw=5, color='k', label='_nolegend_')
-        ax[0].axvline(u_avg_global, ls='-.', color='r', lw=3)
-        ax[0].axvline(u_avg_global + u_rms_global, ls='--', color='r', lw=3)
-        ax[0].axvline(u_avg_global - u_rms_global, ls='--', color='r', lw=3)
-    elif num_components == 2:
-        concatenated_df['LDA1 [m/s]'].plot.kde(ax=ax[0], lw=5, color='k', label='_nolegend_')
+    
+    concatenated_df['LDA1 [m/s]'].plot.kde(ax=ax[0], lw=5, color='k', label='_nolegend_')
+    ax[0].axvline(u_avg_global, ls='-.', color='r', lw=3)
+    ax[0].axvline(u_avg_global + u_rms_global, ls='--', color='r', lw=3)
+    ax[0].axvline(u_avg_global - u_rms_global, ls='--', color='r', lw=3)
+    if not np.isnan(max_com1) and not np.isnan(min_com1):
+        ax[0].set_xlim([min_com1-0.05*min_com1,  max_com1+0.05*max_com1])
+        
+    if num_components == 2:
+        max_com2 = concatenated_df['LDA2{2} [m/s]'].dropna().max()
+        min_com2 = concatenated_df['LDA2{2} [m/s]'].dropna().min()
+        # concatenated_df['LDA1 [m/s]'].plot.kde(ax=ax[0], lw=5, color='k', label='_nolegend_')
         concatenated_df['LDA2{2} [m/s]'].plot.kde(ax=ax[1], lw=5, color='k', label='_nolegend_')
-
-        ax[0].axvline(u_avg_global, ls='-.', color='r', lw=3)
-        ax[0].axvline(u_avg_global + u_rms_global, ls='--', color='r', lw=3)
-        ax[0].axvline(u_avg_global - u_rms_global, ls='--', color='r', lw=3)
+        if not np.isnan(max_com2) and not np.isnan(min_com2):
+            ax[1].set_xlim([min_com2-0.05*min_com2,  max_com2+0.05*max_com2])
+        # ax[0].axvline(u_avg_global, ls='-.', color='r', lw=3)
+        # ax[0].axvline(u_avg_global + u_rms_global, ls='--', color='r', lw=3)
+        # ax[0].axvline(u_avg_global - u_rms_global, ls='--', color='r', lw=3)
         ax[1].axvline(v_avg_global, ls='-.', color='r', lw=3)
         ax[1].axvline(v_avg_global + v_rms_global, ls='--', color='r', lw=3)
         ax[1].axvline(v_avg_global - v_rms_global, ls='--', color='r', lw=3)
+        
+    
     
     # Create a separate figure for the overall histogram and KDE
     fig_overall, ax_overall = plt.subplots(2, 1, figsize=(20, 15)) if num_components == 2 else plt.subplots(1, 1, figsize=(20, 7))
